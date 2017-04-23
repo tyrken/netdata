@@ -36,6 +36,8 @@ class Service(ExecutableService):
         print('aaa')
         self.definitions = deepcopy(CHARTS)
         self.tested_cidrs = {}
+        cfg = self.configuration.get('tested_cidrs')
+        cfg =
         for cidr_name, cidr_string_or_list in self.configuration.get('tested_cidrs'):
             self.tested_cidrs[cidr_name] = [cidr_string_or_list] if isinstance(
                 cidr_string_or_list, basestring) else cidr_string_or_list
