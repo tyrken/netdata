@@ -18,7 +18,7 @@ ORDER = ['ipv4']
 CHARTS = {
     'ipv4': {
         'options': [None, 'IPv4 Routes', 'routes found', 'ipv4', 'ipv4.routes', 'line'],
-        'lines': []
+        'lines': ['num_routes', None, 'absolute']
     }}
 CIDR_MATCHER = re.compile(
     '^(([0-9]{1,3}\.){3}[0-9]{1,3}(\/([0-9]|[1-2][0-9]|3[0-2]))?)$')
@@ -33,25 +33,23 @@ class Service(ExecutableService):
         ExecutableService.__init__(
             self, configuration=configuration, name=name)
         self.order = ORDER
-        print('aaa')
         self.definitions = deepcopy(CHARTS)
-        self.tested_cidrs = {}
-        cfg = self.configuration.get('tested_cidrs')
-        cfg =
-        for cidr_name, cidr_string_or_list in self.configuration.get('tested_cidrs'):
-            self.tested_cidrs[cidr_name] = [cidr_string_or_list] if isinstance(
-                cidr_string_or_list, basestring) else cidr_string_or_list
+        self.tested_cidrs = {'foo': ['10.0.0.0/8']}
+        # cfg = self.configuration.get('tested_cidrs', {})
+        # for cidr_name, cidr_string_or_list in cfg:
+        #     self.tested_cidrs[cidr_name] = [cidr_string_or_list] if isinstance(
+        #         cidr_string_or_list, basestring) else cidr_string_or_list
 
     def check(self):
         cidrs_ok = True
-        print(self.tested_cidrs)
-        for cidr_name, cidrs in self.tested_cidrs:
-            for cidr in cidrs:
-                if not CIDR_MATCHER.match(cidr):
-                    self.error('Syntax error with CIDR: ' + cidr)
-                    cidrs_ok = False
+        # print(self.tested_cidrs)
+        # for cidr_name, cidrs in self.tested_cidrs:
+        #     for cidr in cidrs:
+        #         if not CIDR_MATCHER.match(cidr):
+        #             self.error('Syntax error with CIDR: ' + cidr)
+        #             cidrs_ok = False
 
-        print('dd')
+        # print('dd')
         if access(LINUX_IPV4_ROUTES_PROCFILE, R_OK):
             self.info('Reading routes via: ' + LINUX_IPV4_ROUTES_PROCFILE)
             self.get_route_cidrs = self._route_cidrs_from_proc_file
@@ -106,7 +104,7 @@ class Service(ExecutableService):
                 elif cidr == 'default':
                     route_cidrs.add('0.0.0.0/0')
                 elif CIDR_MATCHER.match(cidr):
-                    if not '/' in cidr:
+                    if '/' not in cidr:
                         cidr += '/32'
                     route_cidrs.add(cidr)
         return route_cidrs
