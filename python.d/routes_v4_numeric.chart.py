@@ -34,23 +34,23 @@ class Service(ExecutableService):
             self, configuration=configuration, name=name)
         self.order = ORDER
         self.definitions = deepcopy(CHARTS)
-        self.tested_cidrs = self.configuration.get('tested_cidrs')
+        self.tests = self.configuration.get('tests')
 
     def check(self):
-        if not (self.tested_cidrs and hasattr(self.tested_cidrs, 'keys')):
-            self.error('tested_cidrs not defined')
+        if not (self.tests and hasattr(self.tests, 'keys')):
+            self.error('tests not defined')
             return False
 
         # TODO: Allow cidr to be an array
         self.numeric_cidrs_to_test = []
-        for cidr_name, cidr in self.tested_cidrs.items():
+        for test_name, cidr in self.tests.items():
             self.definitions['ipv4']['lines'].append(
-                [cidr_name, None, 'absolute'])
+                [test_name, None, 'absolute'])
             numeric_cidr = self._cidr_to_number(cidr)
             if numeric_cidr < 0:
                 self.error('Unparsable CIDR: ' + cidr)
                 return False
-            self.numeric_cidrs_to_test.append((cidr_name, numeric_cidr))
+            self.numeric_cidrs_to_test.append((test_name, numeric_cidr))
 
         if access(LINUX_IPV4_ROUTES_PROCFILE + 'x', R_OK):
             with open(LINUX_IPV4_ROUTES_PROCFILE) as route_procfile:
@@ -171,6 +171,6 @@ class Service(ExecutableService):
             self.error('No routes detected - likely bug in routes_v4.chart.py')
             return None
         data = {'num_routes': len(routes)}
-        for cidr_name, numeric_cidr in self.numeric_cidrs_to_test:
-            data[cidr_name] = 1 if numeric_cidr in routes else 0
+        for test_name, numeric_cidr in self.numeric_cidrs_to_test:
+            data[test_name] = 1 if numeric_cidr in routes else 0
         return data

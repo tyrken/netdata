@@ -6,7 +6,9 @@ from copy import deepcopy
 from os import access, R_OK
 import re
 
+# Internals
 from base import ExecutableService
+from msg import DEBUG_FLAG
 
 # default module values (can be overridden per job in `config`)
 update_every = 5
@@ -25,35 +27,56 @@ CIDR_MATCHER = re.compile(
 
 # TODO: Host path to proc file under docker?
 LINUX_IPV4_ROUTES_PROCFILE = '/proc/net/route'
+IP_COMMAND = 'ip -4 route list'
+IP_BINARY = 'ip'
+NETSTAT_COMMAND = 'netstat -rn4'
 
 
 class Service(ExecutableService):
+
+    @staticmethod
+    def normalise_cidr_list(value):
+        """
+        Allows cidrs to be provided in a list, or space/comma seperated
+        :return: list
+        """
+        cidrs = value
+        if isinstance(value, basestring):
+            cidrs = value.replace(',', ' ').split()
+        for i, cidr in enumerate(cidrs):
+            if '/' not in cidr:
+                cidrs[i] = cidr + '/32'
+        return cidrs
 
     def __init__(self, configuration=None, name=None):
         ExecutableService.__init__(
             self, configuration=configuration, name=name)
         self.order = ORDER
         self.definitions = deepcopy(CHARTS)
-        self.tested_cidrs = {}
-        for cidr_name, cidr_string_or_list in self.configuration.get('tested_cidrs', {}).items():
-            self.tested_cidrs[cidr_name] = [cidr_string_or_list] if isinstance(
-                cidr_string_or_list, basestring) else cidr_string_or_list
+        self.tests = {}
+        for test_name, value in self.configuration.get('tests', {}).items():
+            self.tests[test_name] = self.normalise_cidr_list(value)
 
     def check(self):
+        """
+        Check for validity of test CIDRs, and method to read routes
+        :return: Boolean
+        """
         cidrs_ok = True
-        for cidr_name, cidrs in self.tested_cidrs.items():
-            for cidr in cidrs:
-                if not CIDR_MATCHER.match(cidr):
-                    self.error('Syntax error with CIDR: ' + cidr)
+        self.info('tests: ' + str(self.tests))
+        for test_name, test_cidrs in self.tests.items():
+            for test_cidr in test_cidrs:
+                if not CIDR_MATCHER.match(test_cidr):
+                    self.error('Syntax error with CIDR: ' + test_cidr)
                     cidrs_ok = False
             self.definitions['ipv4']['lines'].append(
-                [cidr_name, None, 'absolute'])
+                [test_name, None, 'absolute'])
         if access(LINUX_IPV4_ROUTES_PROCFILE, R_OK):
             self.info('Reading routes via: ' + LINUX_IPV4_ROUTES_PROCFILE)
             self.proc_file_dest_index = -1
             self.get_route_cidrs = self._route_cidrs_from_proc_file
             return cidrs_ok
-        self.command = 'ip -4 route list' if self.find_binary('ip') else 'netstat -rn4'
+        self.command = IP_COMMAND if self.find_binary(IP_BINARY) else NETSTAT_COMMAND
         self.info('Reading routes via command: ' + self.command)
         self.get_route_cidrs = self._route_cidrs_from_command
         return cidrs_ok and ExecutableService.check(self)
@@ -91,10 +114,11 @@ class Service(ExecutableService):
         genmask_found = False
         for line in raw:
             fields = line.split()
+            if len(fields) < 3:
+                continue
             first_field = fields[0]
             if genmask_found:
-                genmask = fields[2]
-                prefix_length = str(''.join(bin(int(i)) for i in genmask.split('.')).count('1'))
+                prefix_length = str(''.join(bin(int(i)) for i in fields[2].split('.')).count('1'))
                 route_cidrs.add(first_field + '/' + prefix_length)
             else:
                 if first_field == 'Destination' and fields[2] == 'Genmask':
@@ -113,10 +137,12 @@ class Service(ExecutableService):
         :return: dict
         """
         route_cidrs = self.get_route_cidrs()
+        if DEBUG_FLAG:
+            self.debug('Found routes: ' + str(route_cidrs))
         if len(route_cidrs) == 0:
-            self.error('No routes detected - likely edge case for routes.chart.py')
+            self.error('No routes detected - likely bug in routes_v4.chart.py')
             return None
         data = {'num_routes': len(route_cidrs)}
-        for cidr_name, cidrs in self.tested_cidrs.items():
-            data[cidr_name] = 1 if any(c in route_cidrs for c in cidrs) else 0
+        for test_name, test_cidrs in self.tests.items():
+            data[test_name] = 1 if any(c in route_cidrs for c in test_cidrs) else 0
         return data
